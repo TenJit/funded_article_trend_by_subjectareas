@@ -2,6 +2,10 @@ import streamlit as st
 import pandas as pd
 from prophet import Prophet
 import matplotlib.pyplot as plt
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.preprocessing import MultiLabelBinarizer
+from scipy.sparse import hstack
+import pickle
 
 st.set_page_config(layout="wide")
 
@@ -21,7 +25,7 @@ data, gdp, table2 = load_data()
 
 # Sidebar navigation
 st.sidebar.title("Navigation")
-page = st.sidebar.radio("Go to", [ "Citation Analysis" , "Funded Articles Prediction" , "Geospatial Dashboard"])
+page = st.sidebar.radio("Go to", [ "Citation Analysis" , "Funded Articles Prediction" , "Geospatial Dashboard" , "Has Funding Prediction"])
 
 
 
@@ -143,3 +147,62 @@ elif page == "Geospatial Dashboard":
         """,
         height=1000,
     )
+elif page == "Has Funding Prediction":
+    # --- Page 4: Has Funding Prediction ---
+    st.title("Has Funding Prediction")
+
+    # Load the model and transformers
+    with open("rf_model.pkl", "rb") as f:
+        rf_model = pickle.load(f)
+    with open("text_transformer.pkl", "rb") as f:
+        text_transformer = pickle.load(f)
+    with open("mlb.pkl", "rb") as f:
+        mlb = pickle.load(f)
+
+    # User input
+    title = st.text_input("Enter the Title of the Research")
+    index_terms = st.text_area("Enter Index Terms (comma-separated)")
+    subject_field = st.text_area("Enter Subject Fields (comma-separated)")
+
+    if st.button("Predict"):
+        # Process user input
+        text_all = title + " " + index_terms
+        subject_field_list = [field.strip() for field in subject_field.split(',')]
+
+        # Transform input features
+        text_tfidf = text_transformer.transform([text_all])
+        subject_binarized = mlb.transform([subject_field_list])
+
+        # Combine features
+        combined_features = hstack([text_tfidf, subject_binarized])
+
+        # Predict
+        prediction = rf_model.predict(combined_features)[0]
+
+        # Display result
+        result = "Has Funding" if prediction == 1 else "No Funding"
+        st.write(f"Prediction: {result}")
+    example_data = pd.DataFrame({
+        'Title': ["Lower Serum Zinc and Higher CRP Strongly Predict Prenatal Depression and Physio-somatic Symptoms, Which All Together Predict Postnatal Depressive Symptoms"],
+        'Index_Terms': ["Adult Article Beck Depression Inventory Biomarkers C reactive protein C-Reactive Protein Depression, Postpartum Edinburgh Postnatal Depression Scale Fatigue Female Hamilton Depression Rating Scale Humans Inflammation Mediators Medically Unexplained Symptoms Predictive Value of Tests Pregnancy Pregnancy Complications Prenatal Care Psychiatric Status Rating Scales State Trait Anxiety Inventory Zinc adult anxiety disorder autacoid backache biological marker blood body mass constipation controlled study disease severity dyspepsia dysthymia fatigue female first trimester pregnancy haptoglobin human immune activation immune inflammatory pathophysiology immune response major clinical study major depression medically unexplained symptom metabolism myalgia pathophysiology perinatal depression postnatal depression prediction predictive value pregnancy pregnancy complication pregnant woman premenstrual syndrome prenatal care procedures protein blood level psychological rating scale puerperal depression second trimester pregnancy symptom zinc zinc blood level"],
+        'Subject_Field': ["Neuroscienceg"]
+    })
+
+    # Preprocess ข้อมูลตัวอย่าง
+    example_data['Index_Terms'] = example_data['Index_Terms'].fillna("").astype(str)
+    example_data['text_all'] = example_data['Title'].fillna("") + " " + example_data['Index_Terms']
+    example_data['Subject_Field'] = example_data['Subject_Field'].apply(lambda x: [field.strip() for field in x.split(',')])
+
+    # Transform text features (assuming text_transformer และ mlb ถูกเทรนไว้แล้ว)
+    example_text_tfidf = text_transformer.transform(example_data['text_all'])
+    example_subject_binarized = mlb.transform(example_data['Subject_Field'])
+
+    # Combine features
+    example_combined_features = hstack([example_text_tfidf, example_subject_binarized])
+
+    # ทำนายผลลัพธ์
+    example_predictions = rf_model.predict(example_combined_features)
+
+    # แสดงผลลัพธ์
+    example_data['Prediction'] = ["Has Funding" if pred == 1 else "No Funding" for pred in example_predictions]
+    print(example_data[['Title', 'Prediction']])
